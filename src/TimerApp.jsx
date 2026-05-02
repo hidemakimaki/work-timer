@@ -66,6 +66,20 @@ function CustomTooltip({ active, payload, label }) {
   return null
 }
 
+let _audioCtx = null
+
+function getAudioCtx() {
+  if (!_audioCtx || _audioCtx.state === 'closed') {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+  }
+  return _audioCtx
+}
+
+function ensureAudioUnlocked() {
+  const ctx = getAudioCtx()
+  if (ctx.state === 'suspended') ctx.resume()
+}
+
 export default function TimerApp({ user, profile, onProfileChange }) {
   const [sessions, setSessions] = useState([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
@@ -76,6 +90,7 @@ export default function TimerApp({ user, profile, onProfileChange }) {
   const [status, setStatus] = useState('idle')
   const [elapsed, setElapsed] = useState(0)
   const [sessionStart, setSessionStart] = useState(null)
+  const [bgMusic, setBgMusic] = useState('off')
   const [view, setView] = useState('timer')
   const [restored, setRestored] = useState(false)
 
@@ -88,6 +103,9 @@ export default function TimerApp({ user, profile, onProfileChange }) {
   const statusRef = useRef('idle')
   const tickRef = useRef(null)
   const fetchSessionsRef = useRef(null)
+  const musicRef = useRef(null)
+  const musicKeyRef = useRef('off')
+  const shouldPlayMusicRef = useRef(false)
 
   useEffect(() => { projectRef.current = project }, [project])
   useEffect(() => { statusRef.current = status }, [status])
@@ -208,8 +226,33 @@ export default function TimerApp({ user, profile, onProfileChange }) {
 
   useEffect(() => { tickRef.current = tick }, [tick])
 
+  // Background music
+  useEffect(() => {
+    const shouldPlay = status === 'running' && bgMusic !== 'off'
+    shouldPlayMusicRef.current = shouldPlay
+    if (!shouldPlay) {
+      musicRef.current?.pause()
+      return
+    }
+    const MUSIC_SRC = { ice: '/ice3.m4a', fire: '/fire.mp3', piano: '/piano.mp3' }
+    if (!musicRef.current || musicKeyRef.current !== bgMusic) {
+      musicRef.current?.pause()
+      const audio = new Audio(MUSIC_SRC[bgMusic])
+      audio.loop = true
+      audio.volume = 0.4
+      musicRef.current = audio
+      musicKeyRef.current = bgMusic
+    }
+    if (musicRef.current.paused) {
+      musicRef.current.play().catch(() => {})
+    }
+  }, [status, bgMusic])
+
+  useEffect(() => () => { musicRef.current?.pause() }, [])
+
   const start = useCallback(() => {
     if (status === 'running') return
+    ensureAudioUnlocked()
     runStartRef.current = Date.now()
     if (status === 'idle') {
       setSessionStart(new Date())
@@ -293,9 +336,13 @@ export default function TimerApp({ user, profile, onProfileChange }) {
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
+        ensureAudioUnlocked()
         tickRef.current()
         if (statusRef.current === 'running' && !intervalRef.current) {
           intervalRef.current = setInterval(() => tickRef.current(), 1000)
+        }
+        if (shouldPlayMusicRef.current && musicRef.current?.paused) {
+          musicRef.current.play().catch(() => {})
         }
       }
     }
@@ -499,6 +546,34 @@ export default function TimerApp({ user, profile, onProfileChange }) {
                 <Btn onClick={stop} color="#555" outline>終了</Btn>
               </>
             )}
+          </div>
+
+          {/* Music buttons */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[
+              { key: 'off',   label: 'off'       },
+              { key: 'ice',   label: '❄️ ice'   },
+              { key: 'fire',  label: '🔥 fire'  },
+              { key: 'piano', label: '🎹 piano' },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setBgMusic(key)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 20,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: bgMusic === key ? '#444' : '#e8e8e8',
+                  color: bgMusic === key ? '#fff' : '#666',
+                  fontWeight: 600,
+                  fontSize: 13,
+                  transition: 'background 0.2s',
+                }}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
 
