@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabaseClient'
 import AuthPage from './AuthPage'
 import TimerApp from './TimerApp'
@@ -15,6 +15,19 @@ function saveCachedProfile(p) {
     if (p) localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(p))
     else localStorage.removeItem(PROFILE_CACHE_KEY)
   } catch {}
+}
+
+// Supabase v2 はセッションを sb-<ref>-auth-token に保存するので同期的に読める
+function loadCachedSession() {
+  try {
+    const key = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'))
+    if (!key) return null
+    const session = JSON.parse(localStorage.getItem(key))
+    if (!session?.user?.id) return null
+    // 60秒以内に期限切れになる場合は無効とみなす
+    if (session.expires_at && session.expires_at * 1000 < Date.now() + 60000) return null
+    return session
+  } catch { return null }
 }
 
 async function fetchProfile(userId) {
@@ -46,9 +59,12 @@ async function createDefaultProfile(user) {
 }
 
 export default function App() {
-  const [user, setUser] = useState(null)
+  // キャッシュがあれば即座に描画（getSession() を待たない）
+  const [user, setUser] = useState(() => loadCachedSession()?.user ?? null)
   const [profile, setProfile] = useState(loadCachedProfile)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !loadCachedSession())
+  const userRef = useRef(null)
+  useEffect(() => { userRef.current = user }, [user])
 
   const handleProfileChange = (p) => {
     setProfile(p)
@@ -71,6 +87,7 @@ export default function App() {
       }
 
       if (!u || !mounted) return
+      // プロフィールはキャッシュから表示済み、バックグラウンドで最新を取得
       const p = await fetchProfile(u.id)
       if (!mounted) return
       if (p) {
@@ -87,19 +104,27 @@ export default function App() {
       if (event === 'SIGNED_IN') {
         const u = session?.user ?? null
         setUser(u)
-        setLoading(true)
-        try {
-          const p = await fetchProfile(u?.id)
-          if (mounted) {
-            if (p) { setProfile(p); saveCachedProfile(p) }
-            else if (!loadCachedProfile()) {
-              createDefaultProfile(u).then(np => {
-                if (mounted && np) { setProfile(np); saveCachedProfile(np) }
-              }).catch(() => {})
+        if (userRef.current) {
+          // トークンリフレッシュ: ローディング不要、バックグラウンドでプロフィール更新
+          fetchProfile(u?.id).then(p => {
+            if (mounted && p) { setProfile(p); saveCachedProfile(p) }
+          }).catch(() => {})
+        } else {
+          // 新規ログイン: プロフィール取得中だけローディング表示
+          setLoading(true)
+          try {
+            const p = await fetchProfile(u?.id)
+            if (mounted) {
+              if (p) { setProfile(p); saveCachedProfile(p) }
+              else if (!loadCachedProfile()) {
+                createDefaultProfile(u).then(np => {
+                  if (mounted && np) { setProfile(np); saveCachedProfile(np) }
+                }).catch(() => {})
+              }
             }
+          } finally {
+            if (mounted) setLoading(false)
           }
-        } finally {
-          if (mounted) setLoading(false)
         }
       } else if (event === 'SIGNED_OUT') {
         setUser(null)
