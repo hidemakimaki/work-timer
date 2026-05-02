@@ -8,7 +8,7 @@ import LogView from './LogView'
 const STORAGE_KEY = 'work-timer-sessions'
 const ACTIVE_KEY = 'work-timer-active'
 
-const PROJECTS = ['本業仕事', 'サブ仕事', 'その他']
+const PROJECTS = ['講義準備', '大学', '学会', 'その他']
 
 // milestone: 今日の合計時間に応じた背景・メッセージ
 function getMilestone(totalSec) {
@@ -72,7 +72,7 @@ export default function TimerApp({ user, profile, onProfileChange }) {
   const [localData, setLocalData] = useState(loadLocalSessions)
   const [migrating, setMigrating] = useState(false)
 
-  const [project, setProject] = useState('本業仕事')
+  const [project, setProject] = useState('講義準備')
   const [status, setStatus] = useState('idle')
   const [elapsed, setElapsed] = useState(0)
   const [sessionStart, setSessionStart] = useState(null)
@@ -171,7 +171,7 @@ export default function TimerApp({ user, profile, onProfileChange }) {
       date: s.date,
       started_at: s.startedAt || new Date().toISOString(),
       duration: s.duration,
-      project: s.project || '本業仕事',
+      project: s.project || '講義準備',
     }))
     const { error } = await supabase.from('sessions').insert(inserts)
     if (!error) {
@@ -279,7 +279,7 @@ export default function TimerApp({ user, profile, onProfileChange }) {
       date,
       started_at: new Date().toISOString(),
       duration: minutes * 60,
-      project: '本業仕事',
+      project: '講義準備',
     })
     if (!error) fetchSessionsRef.current()
     return !error
